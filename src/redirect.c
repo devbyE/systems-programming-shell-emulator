@@ -9,12 +9,80 @@
  */
 
 #include <stdio.h>
-#include <unistd.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include "../include/shell.h"
 #include "../include/redirect.h"
+
+static int ensure_parent_directories(const char *path)
+{
+    char *path_copy;
+    char *separator;
+    char *current;
+
+    if (path == NULL || strchr(path, '/') == NULL) {
+        return 0;
+    }
+
+    path_copy = malloc(strlen(path) + 1);
+    if (path_copy == NULL) {
+        fprintf(stderr, "Memory allocation error\n");
+        return -1;
+    }
+
+    strcpy(path_copy, path);
+    separator = strrchr(path_copy, '/');
+    if (separator == NULL) {
+        free(path_copy);
+        return 0;
+    }
+
+    *separator = '\0';
+    if (path_copy[0] == '\0') {
+        free(path_copy);
+        return 0;
+    }
+
+    current = path_copy;
+    if (current[0] == '/') {
+        current++;
+    }
+
+    while (*current != '\0') {
+        if (*current == '/') {
+            *current = '\0';
+            if (mkdir(path_copy, 0755) != 0 && errno != EEXIST) {
+                perror("myshell: mkdir");
+                free(path_copy);
+                return -1;
+            }
+            *current = '/';
+        }
+        current++;
+    }
+
+    if (mkdir(path_copy, 0755) != 0 && errno != EEXIST) {
+        perror("myshell: mkdir");
+        free(path_copy);
+        return -1;
+    }
+
+    free(path_copy);
+    return 0;
+}
+
+static int open_output_target(const char *path, int flags)
+{
+    if (ensure_parent_directories(path) != 0) {
+        return -1;
+    }
+
+    return open(path, flags, 0644);
+}
 
 /*
  * Function: setup_redirection
@@ -65,6 +133,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], ">") == 0) {
@@ -73,7 +143,7 @@ int setup_redirection(char **args)
                 return -1;
             }
 
-            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            fd = open_output_target(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC);
             if (fd < 0) {
                 perror("myshell: output redirection");
                 return -1;
@@ -86,6 +156,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], ">>") == 0) {
@@ -94,7 +166,7 @@ int setup_redirection(char **args)
                 return -1;
             }
 
-            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_APPEND, 0644);
+            fd = open_output_target(args[i + 1], O_WRONLY | O_CREAT | O_APPEND);
             if (fd < 0) {
                 perror("myshell: append redirection");
                 return -1;
@@ -107,6 +179,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], "2>") == 0) {
@@ -115,7 +189,7 @@ int setup_redirection(char **args)
                 return -1;
             }
 
-            fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            fd = open_output_target(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC);
             if (fd < 0) {
                 perror("myshell: error redirection");
                 return -1;
@@ -128,6 +202,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else {
