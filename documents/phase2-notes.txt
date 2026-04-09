@@ -1,0 +1,54 @@
+Phase 2 Notes - Redirection Support
+
+This phase extends the shell from Phase 1 by adding support for:
+
+1. Input redirection using <
+2. Output redirection using >
+3. Output append redirection using >>
+4. Standard error redirection using 2>
+5. Combined redirection in the same command
+
+Project design:
+
+- main.c
+  Starts the shell program and controls the main REPL loop.
+
+- shell.c
+  Handles built-in commands, external command execution, and now calls
+  setup_redirection() before execvp() in the child process.
+
+- redirect.c
+  Scans the argument list for redirection operators, opens files,
+  and redirects stdin, stdout, or stderr using dup2().
+
+- shell.h
+  Stores shared constants and core function declarations.
+
+- redirect.h
+  Declares the setup_redirection() function.
+
+Important behavior:
+
+- Redirection operators are removed from the argument list before execvp().
+- The shell supports:
+  <    input redirection
+  >    output overwrite
+  >>   output append
+  2>   standard error redirection
+- Missing filenames after redirection operators produce shell error messages.
+- Missing files for input redirection are handled with perror().
+- Redirection is applied only in the child process, not in the parent process.
+- Files opened for output/error are created with 0644 permissions.
+
+Test cases completed:
+
+- echo hello > output.txt
+- cat < input.txt
+- echo second >> append.txt
+- ls does_not_exist 2> errors.txt
+- cat < input.txt > combined.txt
+- cat < missing.txt
+
+Result:
+
+Phase 2 redirection support is working and compiles successfully.
