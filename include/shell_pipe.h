@@ -43,4 +43,17 @@ int execute_command(char *command);
  */
 void execute_chained_commands(char *line, PipeOperator op);
 
+/*
+ * find_operator_outside_quotes
+ * ----------------------------
+ * Helper function for Phase 3 parsing.
+ * Detects operators like |, &&, ||, ; only when they appear
+ * outside of single or double quotes.
+ *
+ * Prevents incorrect parsing of commands like:
+ *   echo "this | is quoted"
+ */
+const char *find_operator_outside_quotes(const char *line, const char *op);
+
+
 #endif

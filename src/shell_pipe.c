@@ -16,23 +16,50 @@
 #include "shell.h"
 
 /*
+ * find_operator_outside_quotes
+ * ----------------------------
+ * Searches for an operator in the input string, but only if that operator
+ * appears outside of single quotes or double quotes.
+ */
+const char *find_operator_outside_quotes(const char *line, const char *op) {
+    int in_single_quote = 0;
+    int in_double_quote = 0;
+    size_t op_len = strlen(op);
+
+    for (const char *ptr = line; *ptr != '\0'; ptr++) {
+        if (*ptr == '\'' && !in_double_quote) {
+            in_single_quote = !in_single_quote;
+        }
+        else if (*ptr == '"' && !in_single_quote) {
+            in_double_quote = !in_double_quote;
+        }
+        else if (!in_single_quote && !in_double_quote) {
+            if (strncmp(ptr, op, op_len) == 0) {
+                return ptr;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+/*
  * detect_operator
  * ----------------
  * Checks the input line for supported Phase 3 operators.
- * Right now this is a simple detector and does not yet
- * handle quote-aware operator detection.
+ * This version only detects operators that appear outside quotes.
  */
 PipeOperator detect_operator(const char *line) {
-    if (strstr(line, "&&") != NULL) {
+    if (find_operator_outside_quotes(line, "&&") != NULL) {
         return PIPE_AND;
     }
-    if (strstr(line, "||") != NULL) {
+    if (find_operator_outside_quotes(line, "||") != NULL) {
         return PIPE_OR;
     }
-    if (strchr(line, '|') != NULL) {
+    if (find_operator_outside_quotes(line, "|") != NULL) {
         return PIPE_BASIC;
     }
-    if (strchr(line, ';') != NULL) {
+    if (find_operator_outside_quotes(line, ";") != NULL) {
         return PIPE_SEQ;
     }
     return PIPE_NONE;
@@ -42,38 +69,46 @@ PipeOperator detect_operator(const char *line) {
  * split_by_pipe
  * -------------
  * Splits a command line into separate command strings
- * using the pipe character '|'.
- *
- * Example:
- *   "echo hello | wc | cat"
- *
- * Becomes:
- *   commands[0] = "echo hello"
- *   commands[1] = "wc"
- *   commands[2] = "cat"
- *
- * num_commands is updated with the number of commands found.
+ * using the pipe character '|', but only outside quotes.
  */
 char **split_by_pipe(char *line, int *num_commands) {
     int capacity = 10;
     char **commands = malloc(capacity * sizeof(char *));
     int count = 0;
 
-    char *token = strtok(line, "|");
+    int in_single_quote = 0;
+    int in_double_quote = 0;
+    char *start = line;
 
-    while (token != NULL) {
-        if (count >= capacity) {
-            capacity *= 2;
-            commands = realloc(commands, capacity * sizeof(char *));
+    for (char *ptr = line; ; ptr++) {
+        if (*ptr == '\'' && !in_double_quote) {
+            in_single_quote = !in_single_quote;
+        }
+        else if (*ptr == '"' && !in_single_quote) {
+            in_double_quote = !in_double_quote;
         }
 
-        /* Trim leading spaces */
-        while (*token == ' ') {
-            token++;
-        }
+        if (((*ptr == '|') && !in_single_quote && !in_double_quote) || *ptr == '\0') {
+            char saved = *ptr;
+            *ptr = '\0';
 
-        commands[count++] = strdup(token);
-        token = strtok(NULL, "|");
+            while (*start == ' ') {
+                start++;
+            }
+
+            if (count >= capacity) {
+                capacity *= 2;
+                commands = realloc(commands, capacity * sizeof(char *));
+            }
+
+            commands[count++] = strdup(start);
+
+            if (saved == '\0') {
+                break;
+            }
+
+            start = ptr + 1;
+        }
     }
 
     *num_commands = count;
@@ -81,65 +116,115 @@ char **split_by_pipe(char *line, int *num_commands) {
 }
 
 /*
- * execute_pipeline
- * ----------------
- * Executes multiple commands connected by pipes.
+ * split_by_operator
+ * -----------------
+ * Splits a line by a specific operator only when that operator
+ * appears outside quotes.
  *
- * Example:
- *   cmd1 | cmd2 | cmd3
- *
- * Strategy:
- *   1. Create all needed pipes
- *   2. Fork one child per command
- *   3. Redirect stdin/stdout with dup2
- *   4. Close all pipe file descriptors
- *   5. execvp each command
- *   6. Parent waits for all children
+ * Supports:
+ *   &&
+ *   ||
+ *   ;
  */
-void execute_pipeline(char **commands, int num_commands) {
-    int pipes[num_commands - 1][2];
-    pid_t pids[num_commands];
+static int split_by_operator(char *line, const char *op, char **commands, int max_commands) {
+    int count = 0;
+    int in_single_quote = 0;
+    int in_double_quote = 0;
+    size_t op_len = strlen(op);
+    char *start = line;
 
-    /* Create all pipes before forking */
-    for (int i = 0; i < num_commands - 1; i++) {
-        if (pipe(pipes[i]) == -1) {
-            perror("pipe failed");
-            exit(1);
+    for (char *ptr = line; ; ptr++) {
+        if (*ptr == '\'' && !in_double_quote) {
+            in_single_quote = !in_single_quote;
+        }
+        else if (*ptr == '"' && !in_single_quote) {
+            in_double_quote = !in_double_quote;
+        }
+
+        if (((*ptr != '\0') &&
+             !in_single_quote &&
+             !in_double_quote &&
+             strncmp(ptr, op, op_len) == 0) ||
+            *ptr == '\0') {
+
+            char saved0 = *ptr;
+            char saved1 = '\0';
+
+            if (*ptr != '\0') {
+                *ptr = '\0';
+                if (op_len == 2) {
+                    saved1 = *(ptr + 1);
+                    *(ptr + 1) = '\0';
+                }
+            }
+
+            while (*start == ' ') {
+                start++;
+            }
+
+            if (count < max_commands) {
+                commands[count++] = start;
+            }
+
+            if (saved0 == '\0') {
+                break;
+            }
+
+            if (op_len == 2) {
+                *(ptr + 1) = saved1;
+            }
+
+            start = ptr + op_len;
         }
     }
 
-    /* Fork one child process for each command */
+    return count;
+}
+
+/*
+ * execute_pipeline_status
+ * -----------------------
+ * Executes multiple commands connected by pipes and returns
+ * the exit status of the last command in the pipeline.
+ */
+static int execute_pipeline_status(char **commands, int num_commands) {
+    int pipes[num_commands - 1][2];
+    pid_t pids[num_commands];
+    int status = 0;
+    int last_status = 0;
+
+    for (int i = 0; i < num_commands - 1; i++) {
+        if (pipe(pipes[i]) == -1) {
+            perror("pipe failed");
+            return -1;
+        }
+    }
+
     for (int i = 0; i < num_commands; i++) {
         pids[i] = fork();
 
         if (pids[i] < 0) {
             perror("fork failed");
-            exit(1);
+            return -1;
         }
 
         if (pids[i] == 0) {
-            /* Child process */
-
-            /* If this is not the first command,
-               read input from the previous pipe */
+            /* If this is not the first command, read from previous pipe */
             if (i > 0) {
                 dup2(pipes[i - 1][0], STDIN_FILENO);
             }
 
-            /* If this is not the last command,
-               send output to the next pipe */
+            /* If this is not the last command, write to next pipe */
             if (i < num_commands - 1) {
                 dup2(pipes[i][1], STDOUT_FILENO);
             }
 
-            /* Close all pipe file descriptors in the child
-               after dup2 redirects what we need */
+            /* Close all pipe ends in child */
             for (int j = 0; j < num_commands - 1; j++) {
                 close(pipes[j][0]);
                 close(pipes[j][1]);
             }
 
-            /* Parse this command into argv format */
             char **args = parse_line(commands[i]);
 
             if (args == NULL || args[0] == NULL) {
@@ -147,10 +232,7 @@ void execute_pipeline(char **commands, int num_commands) {
                 exit(1);
             }
 
-            /* Replace child with actual command */
             execvp(args[0], args);
-
-            /* Only runs if execvp fails */
             perror("execvp failed");
             exit(1);
         }
@@ -162,40 +244,94 @@ void execute_pipeline(char **commands, int num_commands) {
         close(pipes[i][1]);
     }
 
-    /* Parent waits for all child processes */
+    /* Wait in command order so we can capture the last command's status */
     for (int i = 0; i < num_commands; i++) {
-        waitpid(pids[i], NULL, 0);
+        waitpid(pids[i], &status, 0);
+
+        if (i == num_commands - 1) {
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            }
+            else {
+                last_status = -1;
+            }
+        }
     }
+
+    return last_status;
 }
+
+/*
+ * execute_pipeline
+ * ----------------
+ * Executes multiple commands connected by pipes.
+ */
+void execute_pipeline(char **commands, int num_commands) {
+    (void) execute_pipeline_status(commands, num_commands);
+}
+
+/*
+ * Forward declaration
+ * -------------------
+ * Lets execute_command call execute_chained_commands_status
+ * before its full definition appears later in the file.
+ */
+static int execute_chained_commands_status(char *line, PipeOperator op);
 
 /*
  * execute_command
  * ---------------
- * Executes one normal command and returns its exit status.
- *
- * Return value:
- *   0  -> command succeeded
- *   nonzero -> command failed
- *   -1 -> abnormal termination
- *
- * This is used for Phase 3 logical operators:
- *   &&
- *   ||
- *   ;
+ * Executes one command, chained command, or pipeline
+ * and returns exit status.
  */
 int execute_command(char *command) {
     pid_t pid;
     int status;
     char **args;
 
+    /* Handle sequential commands inside command execution */
+    if (find_operator_outside_quotes(command, ";") != NULL) {
+        char *copy = strdup(command);
+        int last_status = execute_chained_commands_status(copy, PIPE_SEQ);
+        free(copy);
+        return last_status;
+    }
+
+    PipeOperator op = detect_operator(command);
+
+    /* Handle && and || inside command segments */
+    if (op == PIPE_AND || op == PIPE_OR) {
+        char *copy = strdup(command);
+        int last_status = execute_chained_commands_status(copy, op);
+        free(copy);
+        return last_status;
+    }
+
+    /* Handle pipeline inside chained commands */
+    if (op == PIPE_BASIC) {
+        int num_commands = 0;
+        char *copy = strdup(command);
+        int last_status;
+
+        char **cmds = split_by_pipe(copy, &num_commands);
+        last_status = execute_pipeline_status(cmds, num_commands);
+
+        for (int i = 0; i < num_commands; i++) {
+            free(cmds[i]);
+        }
+        free(cmds);
+        free(copy);
+
+        return last_status;
+    }
+
     args = parse_line(command);
 
-    if (args == NULL || args[0] == NULL) {
+    if (!args || !args[0]) {
         free_args(args);
         return -1;
     }
 
-    /* Handle built-in commands like cd, pwd, exit */
     if (is_builtin(args[0])) {
         status = execute_builtin_command(args);
         free_args(args);
@@ -211,16 +347,12 @@ int execute_command(char *command) {
     }
 
     if (pid == 0) {
-        /* Child runs the external command */
         execvp(args[0], args);
-
-        /* Only runs if execvp fails */
         perror("execvp failed");
         free_args(args);
         exit(1);
     }
 
-    /* Parent waits and gets exit status */
     waitpid(pid, &status, 0);
     free_args(args);
 
@@ -232,40 +364,18 @@ int execute_command(char *command) {
 }
 
 /*
- * execute_chained_commands
- * ------------------------
- * Executes commands joined by:
- *   &&
- *   ||
- *   ;
- *
- * Current behavior:
- *   cmd1 && cmd2  -> run cmd2 only if cmd1 succeeds
- *   cmd1 || cmd2  -> run cmd2 only if cmd1 fails
- *   cmd1 ; cmd2   -> always run both
- *
- * This version handles one operator type per command line.
- * Examples it supports:
- *   echo hi && echo yes
- *   false || echo fallback
- *   echo one ; echo two
+ * execute_chained_commands_status
+ * -------------------------------
+ * Executes commands joined by &&, ||, ;
+ * and returns the final exit status.
  */
-void execute_chained_commands(char *line, PipeOperator op) {
+static int execute_chained_commands_status(char *line, PipeOperator op) {
     char *commands[100];
     int count = 0;
-    char *token;
     int last_status = 0;
 
     if (op == PIPE_AND) {
-        token = strtok(line, "&");
-        while (token != NULL) {
-            while (*token == ' ') {
-                token++;
-            }
-
-            commands[count++] = token;
-            token = strtok(NULL, "&");
-        }
+        count = split_by_operator(line, "&&", commands, 100);
 
         for (int i = 0; i < count; i++) {
             last_status = execute_command(commands[i]);
@@ -274,17 +384,12 @@ void execute_chained_commands(char *line, PipeOperator op) {
                 break;
             }
         }
-    }
-    else if (op == PIPE_OR) {
-        token = strtok(line, "|");
-        while (token != NULL) {
-            while (*token == ' ') {
-                token++;
-            }
 
-            commands[count++] = token;
-            token = strtok(NULL, "|");
-        }
+        return last_status;
+    }
+
+    if (op == PIPE_OR) {
+        count = split_by_operator(line, "||", commands, 100);
 
         for (int i = 0; i < count; i++) {
             last_status = execute_command(commands[i]);
@@ -293,20 +398,28 @@ void execute_chained_commands(char *line, PipeOperator op) {
                 break;
             }
         }
-    }
-    else if (op == PIPE_SEQ) {
-        token = strtok(line, ";");
-        while (token != NULL) {
-            while (*token == ' ') {
-                token++;
-            }
 
-            commands[count++] = token;
-            token = strtok(NULL, ";");
-        }
+        return last_status;
+    }
+
+    if (op == PIPE_SEQ) {
+        count = split_by_operator(line, ";", commands, 100);
 
         for (int i = 0; i < count; i++) {
-            execute_command(commands[i]);
+            last_status = execute_command(commands[i]);
         }
+
+        return last_status;
     }
+
+    return execute_command(line);
+}
+
+/*
+ * execute_chained_commands
+ * ------------------------
+ * Executes commands joined by &&, ||, ;
+ */
+void execute_chained_commands(char *line, PipeOperator op) {
+    (void) execute_chained_commands_status(line, op);
 }

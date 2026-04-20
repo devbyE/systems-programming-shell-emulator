@@ -38,56 +38,73 @@ int main(void)
         /* Keep a copy of the original input for Phase 3 parsing */
         char *original_line = strdup(line);
 
-        /* Detect whether the line contains a Phase 3 operator */
-        PipeOperator op = detect_operator(original_line);
+        /* --------------------------------------------------
+         * Phase 3 Operator Handling
+         * --------------------------------------------------
+         * IMPORTANT:
+         * Mixed expressions like:
+         *   echo "a" && echo "b" ; echo "c"
+         * must let ';' split the line first.
+         * So we check for ';' before detect_operator().
+         */
 
-        /* Handle pipe-based commands */
-        if (op == PIPE_BASIC) {
-            int num_commands = 0;
-
-            /* Make a modifiable copy because strtok changes the string */
+        /* Handle sequential commands first */
+        if (find_operator_outside_quotes(original_line, ";") != NULL) {
             char *line_copy = strdup(original_line);
-
-            /* Split the command into pieces around | */
-            char **commands = split_by_pipe(line_copy, &num_commands);
-
-            /* Execute the full pipeline */
-            execute_pipeline(commands, num_commands);
-
-            /* Free split command strings */
-            for (int i = 0; i < num_commands; i++) {
-                free(commands[i]);
-            }
-            free(commands);
+            execute_chained_commands(line_copy, PIPE_SEQ);
             free(line_copy);
         }
-        /* Handle &&, ||, and ; */
-        else if (op == PIPE_AND || op == PIPE_OR || op == PIPE_SEQ) {
-            char *line_copy = strdup(original_line);
-            execute_chained_commands(line_copy, op);
-            free(line_copy);
-        }
+
         else {
-            /* Phase 1 / Phase 2 normal command path */
-            args = parse_line(line);
+            PipeOperator op = detect_operator(original_line);
 
-            if (args == NULL || args[0] == NULL) {
-                free_args(args);
-                free(original_line);
-                free(line);
-                continue;
+            /* Handle && and || */
+            if (op == PIPE_AND || op == PIPE_OR) {
+                char *line_copy = strdup(original_line);
+                execute_chained_commands(line_copy, op);
+                free(line_copy);
             }
 
-            /* Built-in commands like cd, pwd, exit */
-            if (is_builtin(args[0])) {
-                running = execute_builtin_command(args);
+            /* Handle pipelines */
+            else if (op == PIPE_BASIC) {
+                int num_commands = 0;
+
+                /* strtok modifies string, so use a copy */
+                char *line_copy = strdup(original_line);
+
+                char **commands = split_by_pipe(line_copy, &num_commands);
+                execute_pipeline(commands, num_commands);
+
+                /* cleanup */
+                for (int i = 0; i < num_commands; i++) {
+                    free(commands[i]);
+                }
+                free(commands);
+                free(line_copy);
             }
+
+            /* Handle normal commands (Phase 1/2 behavior) */
             else {
-                /* External commands */
-                execute_external(args);
-            }
+                args = parse_line(line);
 
-            free_args(args);
+                if (args == NULL || args[0] == NULL) {
+                    free_args(args);
+                    free(original_line);
+                    free(line);
+                    continue;
+                }
+
+                /* Built-in commands */
+                if (is_builtin(args[0])) {
+                    running = execute_builtin_command(args);
+                }
+                else {
+                    /* External command */
+                    execute_external(args);
+                }
+
+                free_args(args);
+            }
         }
 
         free(original_line);
