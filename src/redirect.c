@@ -13,6 +13,8 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
 #include "../include/shell.h"
 #include "../include/redirect.h"
 
@@ -37,6 +39,36 @@
  *  -1 on failure
  */
 
+static int create_parent_directories(const char *path)
+{
+    char *path_copy;
+
+    if (path == NULL || strchr(path, '/') == NULL) {
+        return 0;
+    }
+
+    path_copy = strdup(path);
+    if (path_copy == NULL) {
+        fprintf(stderr, "myshell: memory allocation error\n");
+        return -1;
+    }
+
+    for (char *ptr = path_copy + 1; *ptr != '\0'; ptr++) {
+        if (*ptr == '/') {
+            *ptr = '\0';
+            if (mkdir(path_copy, 0755) != 0 && errno != EEXIST) {
+                perror("myshell: mkdir");
+                free(path_copy);
+                return -1;
+            }
+            *ptr = '/';
+        }
+    }
+
+    free(path_copy);
+    return 0;
+}
+
 int setup_redirection(char **args)
 {
     int i = 0;
@@ -57,7 +89,6 @@ int setup_redirection(char **args)
                 return -1;
             }
 
-// dup2 replaces standard input (fd 0) with the opened file descriptor            
             if (dup2(fd, STDIN_FILENO) < 0) {
                 perror("myshell: dup2 input");
                 close(fd);
@@ -65,6 +96,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], ">") == 0) {
@@ -73,12 +106,16 @@ int setup_redirection(char **args)
                 return -1;
             }
 
+            if (create_parent_directories(args[i + 1]) != 0) {
+                return -1;
+            }
+
             fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd < 0) {
                 perror("myshell: output redirection");
                 return -1;
             }
-// dup2 replaces standard output (fd 1) with the opened file descriptor
+
             if (dup2(fd, STDOUT_FILENO) < 0) {
                 perror("myshell: dup2 output");
                 close(fd);
@@ -86,11 +123,17 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], ">>") == 0) {
             if (args[i + 1] == NULL) {
                 fprintf(stderr, "myshell: missing output file after >>\n");
+                return -1;
+            }
+
+            if (create_parent_directories(args[i + 1]) != 0) {
                 return -1;
             }
 
@@ -107,6 +150,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else if (strcmp(args[i], "2>") == 0) {
@@ -115,12 +160,16 @@ int setup_redirection(char **args)
                 return -1;
             }
 
+            if (create_parent_directories(args[i + 1]) != 0) {
+                return -1;
+            }
+
             fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (fd < 0) {
                 perror("myshell: error redirection");
                 return -1;
             }
-// dup2 replaces standard error (fd 2) with the opened file descriptor
+
             if (dup2(fd, STDERR_FILENO) < 0) {
                 perror("myshell: dup2 stderr");
                 close(fd);
@@ -128,6 +177,8 @@ int setup_redirection(char **args)
             }
 
             close(fd);
+            free(args[i]);
+            free(args[i + 1]);
             i += 2;
         }
         else {
