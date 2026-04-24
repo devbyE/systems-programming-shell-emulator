@@ -1,6 +1,5 @@
 /*
  * File: redirect.c
- * Author: Efrem Wilkerson
  * Description:
  * Implements input, output, append, and error redirection.
  * This file scans the argument list for <, >, >>, and 2>

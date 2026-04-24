@@ -1,6 +1,5 @@
 /*
  * File: redirect.h
- * Author: Efrem Wilkerson
  * Description:
  * Header file for redirection support.
  * Declares the setup_redirection function used to

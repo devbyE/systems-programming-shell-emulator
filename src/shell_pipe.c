@@ -1,6 +1,5 @@
 /*
  * File: shell_pipe.c
- * Author: Efrem Wilkerson
  * Description:
  * Phase 3 pipe support for the shell.
  * This file detects operators, splits commands by pipe,

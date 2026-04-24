@@ -1,6 +1,5 @@
 /*
  * File: shell_pipe.h
- * Author: Efrem Wilkerson
  * Description:
  * Declarations for the Phase 3 operator and pipeline helpers.
  * Phase 4 still reuses this parsing and execution path for background jobs.

@@ -1,6 +1,5 @@
 /*
  * File: main.c
- * Author: Efrem Wilkerson
  * Description:
  * Main shell loop.
  * Phase 3 update: Added operator detection, pipeline execution,

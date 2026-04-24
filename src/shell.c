@@ -1,6 +1,5 @@
 /*
  * File: shell.c
- * Author: Efrem Wilkerson
  * Description:
  * Implements the main shell loop.
  * Handles reading user input, parsing arguments,

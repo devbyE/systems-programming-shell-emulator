@@ -1,6 +1,5 @@
 /*
  * File: shell.h
- * Author: Efrem Wilkerson
  * Description:
  * Shared constants and core shell declarations live here.
  * Phase 4 hooks into this header too, so execution entry points,
