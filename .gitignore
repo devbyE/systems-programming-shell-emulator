@@ -1,6 +1,28 @@
+# Build output
 bin/
 build_obj/
-*.o
-*.exe
-*.txt
+myshell
+
+# Test output
+results.txt
+test_results.txt
+test_results_phase3.txt
+test_results_phase4.txt
+
+# OS/editor files
+.DS_Store
 .vscode/
+test_extract/
+
+# School-provided test files
+test_phase*.sh
+pwd_test.txt
+test.txt
+build_obj/
+bin/
+myshell
+test_extract/
+test_*.sh
+test_results*.txt
+pwd_test.txt
+test.txt

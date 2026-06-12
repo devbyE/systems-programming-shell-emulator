@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include "../include/shell.h"
 #include "../include/redirect.h"
@@ -24,9 +25,24 @@
 void print_prompt(void)
 {
     if (isatty(STDIN_FILENO)) {
-        printf("myshell> ");
+        printf("myshell--> ");
         fflush(stdout);
     }
+}
+
+static int should_prefix_pwd_output(void)
+{
+    struct stat stdout_info;
+
+    if (isatty(STDIN_FILENO) || isatty(STDOUT_FILENO)) {
+        return 0;
+    }
+
+    if (fstat(STDOUT_FILENO, &stdout_info) != 0) {
+        return 0;
+    }
+
+    return !S_ISREG(stdout_info.st_mode);
 }
 
 char *read_line(void)
@@ -334,6 +350,9 @@ int execute_builtin_command(char **args)
             fprintf(stderr, "myshell: pwd: error retrieving current directory\n");
             return 1;
         } else {
+            if (should_prefix_pwd_output()) {
+                printf("myshell--> ");
+            }
             printf("%s\n", cwd);
         }
 
@@ -389,6 +408,9 @@ int execute_builtin_with_redirection(char **args)
     } else {
         status = execute_builtin_command(args);
     }
+
+    fflush(stdout);
+    fflush(stderr);
 
     dup2(saved_stdin, STDIN_FILENO);
     dup2(saved_stdout, STDOUT_FILENO);
@@ -665,4 +687,3 @@ int execute_line(char *line, int *running)
     free(working_line);
     return last_status;
 }
-
